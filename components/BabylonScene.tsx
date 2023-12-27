@@ -1,7 +1,17 @@
 import { useEffect, useRef } from "react";
-import { Engine, Scene, FreeCamera, Vector3 } from "@babylonjs/core";
+import { Engine, Scene, FreeCamera, Vector3, EngineOptions, SceneOptions } from "@babylonjs/core";
 
-export default ({ antialias, engineOptions, adaptToDeviceRatio, sceneOptions, onRender, onSceneReady, ...rest }) => {
+interface BabylonSceneProps {
+  id: string;
+  antialias?: boolean;
+  engineOptions?: EngineOptions;
+  adaptToDeviceRatio?: boolean;
+  sceneOptions?: SceneOptions;
+  onRender: (scene: Scene) => void;
+  onSceneReady: (scene: Scene) => void;
+}
+
+const BabylonScene: React.FC<BabylonSceneProps> = ({ antialias, engineOptions, adaptToDeviceRatio, sceneOptions, onRender, onSceneReady, ...rest }) => {
   const reactCanvas = useRef(null);
 
   // set up basic engine and scene
@@ -46,3 +56,5 @@ export default ({ antialias, engineOptions, adaptToDeviceRatio, sceneOptions, on
 
   return <canvas style={{ width: "100%", height: "100%" }} ref={reactCanvas} {...rest} />;
 };
+
+export default BabylonScene;

@@ -1,8 +1,8 @@
 "use client";
 
 import React from "react";
-import { FreeCamera, Vector3, HemisphericLight, CreateLineSystem, Mesh, Scene } from "@babylonjs/core";
-import SceneComponent from "../components/BabylonScene";
+import { Vector3, HemisphericLight, CreateLineSystem, Mesh, Scene } from "@babylonjs/core";
+import BabylonScene from "../components/BabylonScene";
 import "./globals.css";
 
 
@@ -37,6 +37,6 @@ const onRender = (scene: Scene) => {
 
 export default () => (
   <div>
-    <SceneComponent antialias onSceneReady={onSceneReady} onRender={onRender} id="my-canvas" />
+    <BabylonScene antialias onSceneReady={onSceneReady} onRender={onRender} id="my-canvas" />
   </div>
 );
