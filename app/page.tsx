@@ -1,26 +1,45 @@
 "use client";
 
 import React from "react";
-import { Vector3, HemisphericLight, CreateLineSystem, Mesh, Scene } from "@babylonjs/core";
+import { Vector3, HemisphericLight, CreateGreasedLine, Mesh, Scene, Color3 } from "@babylonjs/core";
 import BabylonScene from "../components/BabylonScene";
 import "./globals.css";
 
 
 let box: Mesh;
 
-const onSceneReady = (scene: Scene) => {
-  const light = new HemisphericLight('light', new Vector3(0, 1, 0), scene);
-  
-  const gridSize = 50;
+const makeGrid = (scene: Scene) => {
+  const gridSize = 1000;
   const gridSpacing = 1;
-  
+
+  const line = CreateGreasedLine('line', { points: [new Vector3(-gridSize, 0, 0), new Vector3(gridSize, 0, 0)], });
+  line.material!.backFaceCulling = false;
+
   const lines = [];
   for (let i = -gridSize; i <= gridSize; i += gridSpacing) {
     lines.push([new Vector3(-gridSize, 0, i), new Vector3(gridSize, 0, i)]);
     lines.push([new Vector3(i, 0, -gridSize), new Vector3(i, 0, gridSize)]);
   }
-  
-  let grid = CreateLineSystem('grid', { lines: lines, }, scene);
+
+  return CreateGreasedLine('grid', { instance: line, points: lines })
+}
+
+const onSceneReady = (scene: Scene) => {
+  const light = new HemisphericLight('light', new Vector3(0, 1, 0), scene);
+  scene.fogMode = Scene.FOGMODE_EXP2;
+  scene.fogDensity = 1;
+  scene.fogColor = new Color3(0.1, 0.1, 0.1);
+
+  const gridSize = 50;
+  const gridSpacing = 1;
+
+  const lines = [];
+  for (let i = -gridSize; i <= gridSize; i += gridSpacing) {
+    lines.push([new Vector3(-gridSize, 0, i), new Vector3(gridSize, 0, i)]);
+    lines.push([new Vector3(i, 0, -gridSize), new Vector3(i, 0, gridSize)]);
+  }
+
+  let grid = makeGrid(scene)
 };
 
 /**

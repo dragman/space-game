@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Engine, Scene, FreeCamera, Vector3, EngineOptions, SceneOptions } from "@babylonjs/core";
+import { Engine, Scene, Vector3, EngineOptions, SceneOptions, UniversalCamera } from "@babylonjs/core";
 
 interface BabylonSceneProps {
   id: string;
@@ -22,7 +22,8 @@ const BabylonScene: React.FC<BabylonSceneProps> = ({ antialias, engineOptions, a
 
     const engine = new Engine(canvas, antialias, engineOptions, adaptToDeviceRatio);
     const scene = new Scene(engine, sceneOptions);
-    const camera = new FreeCamera('camera', new Vector3(0, 5, -10), scene);
+
+    const camera = new UniversalCamera('camera', new Vector3(0, 5, -10), scene);
     camera.setTarget(Vector3.Zero());
     camera.attachControl(canvas, true);
 
