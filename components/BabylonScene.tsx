@@ -24,7 +24,7 @@ const BabylonScene: React.FC<BabylonSceneProps> = ({ antialias, engineOptions, a
     const scene = new Scene(engine, sceneOptions);
 
     const camera = new UniversalCamera('camera', new Vector3(0, 5, -10), scene);
-    camera.setTarget(Vector3.Zero());
+    camera.setTarget(new Vector3(0, 5, 0));
     camera.attachControl(canvas, true);
 
     if (scene.isReady()) {
