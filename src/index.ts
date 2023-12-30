@@ -117,8 +117,6 @@ class BabylonApp {
             this.onIsReady();
         }
 
-        this.scene.onPointerObservable.add();
-
         this.engine.runRenderLoop(() => {
             this.scene.render();
         });
