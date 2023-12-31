@@ -9,7 +9,7 @@ function init(): void {
     }
 }
 
-export function addLabelToMesh(mesh: AbstractMesh): void {
+export function addLabelToMesh(mesh: AbstractMesh, text: string): TextBlock {
     if (!advancedTexture) {
         init();
     }
@@ -27,7 +27,8 @@ export function addLabelToMesh(mesh: AbstractMesh): void {
     advancedTexture.addControl(label);
 
     const text1: TextBlock = new TextBlock();
-    text1.text = mesh.name;
+    text1.text = text;
     text1.color = "white";
     label.addControl(text1);
+    return text1;
 }

@@ -1,10 +1,11 @@
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder";
 import { Scene } from "@babylonjs/core/scene";
-
+import { Behavior, Mesh, PointerEventTypes, PointerInfo, int } from "@babylonjs/core";
+import { TextBlock } from "@babylonjs/gui";
 import { GridMaterial } from "@babylonjs/materials/grid/gridMaterial";
 
 // Augments the scene with the debug methods
@@ -12,7 +13,6 @@ import "@babylonjs/core/Debug/debugLayer";
 import "@babylonjs/inspector";
 
 import { addLabelToMesh } from "./gui";
-import { Behavior, Mesh, PointerEventTypes, PointerInfo, int } from "@babylonjs/core";
 
 interface IPickableMesh {
     mesh: Mesh;
@@ -40,7 +40,7 @@ class PickableMeshBehaviour implements Behavior<IPickableMesh> {
         this.scene.onPointerObservable.removeCallback(this.onPointerPick);
     }
 
-    private onPointerPick = (pointerInfo: PointerInfo) => {
+    private onPointerPick = (pointerInfo: PointerInfo): void => {
         switch (pointerInfo.type) {
             case PointerEventTypes.POINTERPICK:
                 if (pointerInfo.pickInfo.pickedMesh === this.pickable.mesh) {
@@ -57,22 +57,44 @@ class Grid implements IPickableMesh {
     public gridSize: int;
     public gridSubdivisions: int;
     public mesh: Mesh;
+    private label: TextBlock;
 
     constructor(name: string, scene: Scene, size: int, subdivisions: int) {
         this.gridSize = size;
         this.gridSubdivisions = subdivisions;
 
+        this.mesh = CreateGround("ground1", { width: size, height: size, subdivisions: subdivisions }, scene);
+        this.mesh.position = new Vector3(0, 0, 0);
+
         const material = new GridMaterial("grid", scene);
         material.gridRatio = 3;
         material.gridRatio = this.gridSize / this.gridSubdivisions;
-
-        this.mesh = CreateGround("ground1", { width: size, height: size, subdivisions: subdivisions }, scene);
-
         this.mesh.material = material;
+
+        this.label = addLabelToMesh(this.mesh, "");
     }
 
     onPicked = (pointerInfo: PointerInfo): void => {
-        alert("BAM!");
+        const pickedPoint = pointerInfo.pickInfo.pickedPoint;
+        const localTransform = Matrix.Invert(this.mesh.getWorldMatrix());
+        const localPoint = Vector3.TransformCoordinates(pickedPoint, localTransform);
+        const gridPosition = this.getGridPosition(localPoint);
+        this.label.text = `(${gridPosition.row}, ${gridPosition.column})`;
+    };
+
+    getGridPosition = (localPoint: Vector3): { row: int; column: int } => {
+        const cellHeight = this.gridSize / this.gridSubdivisions;
+
+        const normalizedX = localPoint.x + this.gridSize / 2;
+        const normalizedZ = localPoint.z + this.gridSize / 2;
+
+        const column = Math.floor(normalizedX / cellHeight);
+        const row = Math.floor(normalizedZ / cellHeight);
+
+        const clampedRow = Math.max(0, Math.min(row, this.gridSubdivisions - 1));
+        const clampedColumn = Math.max(0, Math.min(column, this.gridSubdivisions - 1));
+
+        return { row: clampedRow, column: clampedColumn };
     };
 }
 
@@ -100,7 +122,6 @@ class BabylonApp {
         light.intensity = 0.7;
 
         const ground = new Grid("ground1", this.scene, 12, 4);
-        addLabelToMesh(ground.mesh);
 
         const pickableBehaviour = new PickableMeshBehaviour("pickableMeshBehaviour1", this.scene);
         pickableBehaviour.attach(ground);
