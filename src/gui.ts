@@ -13,7 +13,7 @@ export function addLabelToMesh(mesh: AbstractMesh, text: string): TextBlock {
     if (!advancedTexture) {
         init();
     }
-    let label: Rectangle = new Rectangle("label for " + mesh.name);
+    let label: Rectangle = new Rectangle(mesh.name + "_label");
     label.background = "black";
     label.height = "30px";
     label.alpha = 0.5;

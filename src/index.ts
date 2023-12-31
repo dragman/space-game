@@ -4,7 +4,7 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder";
 import { Scene } from "@babylonjs/core/scene";
-import { Behavior, Mesh, PointerEventTypes, PointerInfo, int } from "@babylonjs/core";
+import { Color3, Color4, Mesh, MeshBuilder, PointerInfo, StandardMaterial, int } from "@babylonjs/core";
 import { TextBlock } from "@babylonjs/gui";
 import { GridMaterial } from "@babylonjs/materials/grid/gridMaterial";
 
@@ -13,43 +13,32 @@ import "@babylonjs/core/Debug/debugLayer";
 import "@babylonjs/inspector";
 
 import { addLabelToMesh } from "./gui";
+import { IPickableMesh, PickableMeshBehaviour } from "./behaviours";
 
-interface IPickableMesh {
-    mesh: Mesh;
-    onPicked(pointerInfo: PointerInfo): void;
-}
-
-class PickableMeshBehaviour implements Behavior<IPickableMesh> {
-    public name: string;
-    private pickable: IPickableMesh;
-    private scene: Scene;
+class Pawn implements IPickableMesh {
+    public mesh: Mesh;
 
     constructor(name: string, scene: Scene) {
-        this.name = name;
-        this.scene = scene;
+        this.mesh = MeshBuilder.CreateCapsule(name, { height: 2, radius: 0.5 }, scene);
+        this.mesh.position = new Vector3(0, 2 / 2, 0);
+        this.mesh.edgesWidth = 2.0;
+        this.mesh.edgesColor = Color4.FromColor3(Color3.Black());
+
+
+        const material = new StandardMaterial(`${name}_material`, scene);
+        material.diffuseColor = Color3.White();
+        this.mesh.material = material;
+
+        const pickableBehaviour = new PickableMeshBehaviour(`${name}_pickable_behaviour`, scene);
+        pickableBehaviour.attach(this);
     }
 
-    public init(): void {}
-
-    public attach(pickable: IPickableMesh): void {
-        this.pickable = pickable;
-        this.scene.onPointerObservable.add(this.onPointerPick);
+    onPicked(pointerInfo: PointerInfo): void {
+        this.mesh.enableEdgesRendering(0.99);
     }
 
-    public detach(): void {
-        this.scene.onPointerObservable.removeCallback(this.onPointerPick);
-    }
-
-    private onPointerPick = (pointerInfo: PointerInfo): void => {
-        switch (pointerInfo.type) {
-            case PointerEventTypes.POINTERPICK:
-                if (pointerInfo.pickInfo.pickedMesh === this.pickable.mesh) {
-                    this.pickable.onPicked(pointerInfo);
-                }
-                break;
-            default:
-                break;
-        }
+    onUnpicked = (pointerInfo: PointerInfo): void => {
+        this.mesh.disableEdgesRendering();
     };
 }
 
@@ -63,15 +52,18 @@ class Grid implements IPickableMesh {
         this.gridSize = size;
         this.gridSubdivisions = subdivisions;
 
-        this.mesh = CreateGround("ground1", { width: size, height: size, subdivisions: subdivisions }, scene);
+        this.mesh = CreateGround(`${name}_ground`, { width: size, height: size, subdivisions: subdivisions }, scene);
         this.mesh.position = new Vector3(0, 0, 0);
 
-        const material = new GridMaterial("grid", scene);
+        const material = new GridMaterial(`${name}_material`, scene);
         material.gridRatio = 3;
         material.gridRatio = this.gridSize / this.gridSubdivisions;
         this.mesh.material = material;
 
         this.label = addLabelToMesh(this.mesh, "");
+
+        const pickableBehaviour = new PickableMeshBehaviour(`${name}_pickable_behaviour`, scene);
+        pickableBehaviour.attach(this);
     }
 
     onPicked = (pointerInfo: PointerInfo): void => {
@@ -80,6 +72,10 @@ class Grid implements IPickableMesh {
         const localPoint = Vector3.TransformCoordinates(pickedPoint, localTransform);
         const gridPosition = this.getGridPosition(localPoint);
         this.label.text = `(${gridPosition.row}, ${gridPosition.column})`;
+    };
+
+    onUnpicked = (pointerInfo: PointerInfo): void => {
+        this.label.text = "";
     };
 
     getGridPosition = (localPoint: Vector3): { row: int; column: int } => {
@@ -114,17 +110,15 @@ class BabylonApp {
     };
 
     onIsReady = async (): Promise<void> => {
-        const camera = new ArcRotateCamera("camera1", -Math.PI / 2, Math.PI / 5, 10, Vector3.Zero(), this.scene);
+        const camera = new ArcRotateCamera("camera1", -Math.PI / 4, Math.PI / 3, 20, Vector3.Zero(), this.scene);
         camera.setTarget(Vector3.Zero());
         camera.attachControl(this.canvas, true);
 
         const light = new HemisphericLight("light1", new Vector3(0, 1, 0), this.scene);
-        light.intensity = 0.7;
+        light.intensity = 0.9;
 
         const ground = new Grid("ground1", this.scene, 12, 4);
-
-        const pickableBehaviour = new PickableMeshBehaviour("pickableMeshBehaviour1", this.scene);
-        pickableBehaviour.attach(ground);
+        const pawn = new Pawn("pawn1", this.scene);
 
         if (IS_DEVELOPMENT) {
             this.scene.debugLayer.show();
