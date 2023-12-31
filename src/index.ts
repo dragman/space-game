@@ -4,7 +4,7 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder";
 import { Scene } from "@babylonjs/core/scene";
-import { Color3, Color4, Mesh, MeshBuilder, PointerInfo, StandardMaterial, int } from "@babylonjs/core";
+import { Color3, Color4, Mesh, MeshBuilder, Observable, PointerInfo, StandardMaterial, int } from "@babylonjs/core";
 import { TextBlock } from "@babylonjs/gui";
 import { GridMaterial } from "@babylonjs/materials/grid/gridMaterial";
 
@@ -15,8 +15,37 @@ import "@babylonjs/inspector";
 import { addLabelToMesh } from "./gui";
 import { IPickableMesh, PickableMeshBehaviour } from "./behaviours";
 
+class Mover {
+    private grid: Grid;
+    private trackedPawns: Pawn[];
+    constructor(grid: Grid) {
+        this.grid = grid;
+        this.trackedPawns = [];
+    }
+
+    trackPawns = (...pawns: Pawn[]): void => {
+        pawns.forEach((pawn) => {
+            pawn.onSelectionObservable.add(this.onPawnSelected);
+        });
+        this.trackedPawns.push(...pawns);
+    };
+
+    onPawnSelected = (selectedPawn: Pawn): void => {
+        this.grid.onGridPositionSelectedObservable.addOnce((gridPosition: GridPosition) => {
+            const targetPosition = new Vector3(
+                gridPosition.normalisedWorldPosition.x,
+                selectedPawn.mesh.position.y,
+                gridPosition.normalisedWorldPosition.z
+            );
+            selectedPawn.mesh.position.copyFrom(targetPosition);
+        });
+    };
+}
+
 class Pawn implements IPickableMesh {
     public mesh: Mesh;
+    public selected: boolean;
+    public onSelectionObservable: Observable<Pawn>;
 
     constructor(name: string, scene: Scene) {
         this.mesh = MeshBuilder.CreateCapsule(name, { height: 2, radius: 0.5 }, scene);
@@ -24,28 +53,45 @@ class Pawn implements IPickableMesh {
         this.mesh.edgesWidth = 2.0;
         this.mesh.edgesColor = Color4.FromColor3(Color3.Black());
 
-
         const material = new StandardMaterial(`${name}_material`, scene);
         material.diffuseColor = Color3.White();
         this.mesh.material = material;
 
         const pickableBehaviour = new PickableMeshBehaviour(`${name}_pickable_behaviour`, scene);
         pickableBehaviour.attach(this);
+
+        this.onSelectionObservable = new Observable();
     }
 
-    onPicked(pointerInfo: PointerInfo): void {
+    onPicked = (pointerInfo: PointerInfo): void => {
         this.mesh.enableEdgesRendering(0.99);
-    }
+        if (this.selected !== true) {
+            this.selected = true;
+            this.onSelectionObservable.notifyObservers(this);
+        }
+    };
 
     onUnpicked = (pointerInfo: PointerInfo): void => {
         this.mesh.disableEdgesRendering();
+        if (this.selected === true) {
+            this.selected = false;
+        }
     };
+}
+
+interface GridPosition {
+    column: int;
+    row: int;
+    worldPosition: Vector3;
+    normalisedWorldPosition: Vector3;
+    localPosition: Vector3;
 }
 
 class Grid implements IPickableMesh {
     public gridSize: int;
     public gridSubdivisions: int;
     public mesh: Mesh;
+    public onGridPositionSelectedObservable: Observable<GridPosition>;
     private label: TextBlock;
 
     constructor(name: string, scene: Scene, size: int, subdivisions: int) {
@@ -64,21 +110,33 @@ class Grid implements IPickableMesh {
 
         const pickableBehaviour = new PickableMeshBehaviour(`${name}_pickable_behaviour`, scene);
         pickableBehaviour.attach(this);
+
+        this.onGridPositionSelectedObservable = new Observable();
     }
 
     onPicked = (pointerInfo: PointerInfo): void => {
         const pickedPoint = pointerInfo.pickInfo.pickedPoint;
-        const localTransform = Matrix.Invert(this.mesh.getWorldMatrix());
+        const worldMatrix = this.mesh.getWorldMatrix();
+        const localTransform = Matrix.Invert(worldMatrix);
         const localPoint = Vector3.TransformCoordinates(pickedPoint, localTransform);
         const gridPosition = this.getGridPosition(localPoint);
+        const normalisedLocalPosition = new Vector3(gridPosition.x, this.mesh.position.y, gridPosition.z);
+        const normalisedWorldPosition = Vector3.TransformCoordinates(normalisedLocalPosition, worldMatrix);
         this.label.text = `(${gridPosition.row}, ${gridPosition.column})`;
+        this.onGridPositionSelectedObservable.notifyObservers({
+            column: gridPosition.column,
+            row: gridPosition.row,
+            worldPosition: pickedPoint,
+            normalisedWorldPosition: normalisedWorldPosition,
+            localPosition: localPoint,
+        });
     };
 
     onUnpicked = (pointerInfo: PointerInfo): void => {
         this.label.text = "";
     };
 
-    getGridPosition = (localPoint: Vector3): { row: int; column: int } => {
+    getGridPosition = (localPoint: Vector3): { row: int; column: int; x: number; z: number } => {
         const cellHeight = this.gridSize / this.gridSubdivisions;
 
         const normalizedX = localPoint.x + this.gridSize / 2;
@@ -90,7 +148,10 @@ class Grid implements IPickableMesh {
         const clampedRow = Math.max(0, Math.min(row, this.gridSubdivisions - 1));
         const clampedColumn = Math.max(0, Math.min(column, this.gridSubdivisions - 1));
 
-        return { row: clampedRow, column: clampedColumn };
+        const x = column * cellHeight + cellHeight / 2 - this.gridSize / 2;
+        const z = row * cellHeight + cellHeight / 2 - this.gridSize / 2;
+
+        return { row: clampedRow, column: clampedColumn, x: x, z: z };
     };
 }
 
@@ -117,8 +178,11 @@ class BabylonApp {
         const light = new HemisphericLight("light1", new Vector3(0, 1, 0), this.scene);
         light.intensity = 0.9;
 
-        const ground = new Grid("ground1", this.scene, 12, 4);
+        const grid = new Grid("grid1", this.scene, 12, 4);
         const pawn = new Pawn("pawn1", this.scene);
+
+        const mover = new Mover(grid);
+        mover.trackPawns(pawn);
 
         if (IS_DEVELOPMENT) {
             this.scene.debugLayer.show();

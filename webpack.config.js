@@ -20,5 +20,6 @@ module.exports = (env, argv) => {
         IS_DEVELOPMENT: JSON.stringify(isDevelopment),
       }),
     ],
+    devtool: "eval-cheap-source-map",
   };
 };
