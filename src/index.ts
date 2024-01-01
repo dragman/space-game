@@ -4,7 +4,20 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder";
 import { Scene } from "@babylonjs/core/scene";
-import { Color3, Color4, Mesh, MeshBuilder, Observable, PointerInfo, StandardMaterial, int } from "@babylonjs/core";
+import {
+    Animation,
+    BackEase,
+    Color3,
+    Color4,
+    EasingFunction,
+    IAnimationKey,
+    Mesh,
+    MeshBuilder,
+    Observable,
+    PointerInfo,
+    StandardMaterial,
+    int,
+} from "@babylonjs/core";
 import { TextBlock } from "@babylonjs/gui";
 import { GridMaterial } from "@babylonjs/materials/grid/gridMaterial";
 
@@ -15,11 +28,36 @@ import "@babylonjs/inspector";
 import { addLabelToMesh } from "./gui";
 import { IPickableMesh, PickableMeshBehaviour } from "./behaviours";
 
+enum GameState {
+    Plan,
+    Resolve,
+}
+
+interface GameStateTransition {
+    fromState: GameState;
+    toState: GameState;
+}
+
+class GameStateMachine {
+    public currentState: GameState;
+    public onGameStateTransitionObservable: Observable<GameStateTransition>;
+
+    constructor(initialState?: GameState) {
+        this.currentState = initialState ?? GameState.Plan;
+        this.onGameStateTransitionObservable = new Observable();
+    }
+
+    changeState = (targetState: GameState): void => {
+        if (targetState === this.currentState) {
+            throw new Error(`We're already in ${GameState[this.currentState]} state!`);
+        }
+        this.onGameStateTransitionObservable.notifyObservers({ fromState: this.currentState, toState: targetState });
+    };
+}
+
 class Mover {
-    private grid: Grid;
     private trackedPawns: Pawn[];
-    constructor(grid: Grid) {
-        this.grid = grid;
+    constructor(public scene: Scene, public grid: Grid) {
         this.trackedPawns = [];
     }
 
@@ -37,7 +75,26 @@ class Mover {
                 selectedPawn.mesh.position.y,
                 gridPosition.normalisedWorldPosition.z
             );
-            selectedPawn.mesh.position.copyFrom(targetPosition);
+
+            // Put a simple cheeky animation in.
+            const frameRate = 60;
+            const easingFunction = new BackEase(0.5);
+            easingFunction.setEasingMode(EasingFunction.EASINGMODE_EASEINOUT);
+            const moveAnimation = new Animation("movePawn", "position", frameRate, Animation.ANIMATIONTYPE_VECTOR3);
+            const moveAnimationKeys: IAnimationKey[] = [
+                { frame: 0, value: selectedPawn.mesh.position, easingFunction: easingFunction },
+                { frame: 1 * frameRate, value: targetPosition, easingFunction: easingFunction },
+            ];
+            moveAnimation.setKeys(moveAnimationKeys);
+            const anim = this.scene.beginDirectAnimation(
+                selectedPawn.mesh,
+                [moveAnimation],
+                0,
+                1 * frameRate,
+                undefined,
+                undefined,
+                (): void => {}
+            );
         });
     };
 }
@@ -181,7 +238,8 @@ class BabylonApp {
         const grid = new Grid("grid1", this.scene, 12, 4);
         const pawn = new Pawn("pawn1", this.scene);
 
-        const mover = new Mover(grid);
+        const stateMachine = new GameStateMachine(GameState.Plan);
+        const mover = new Mover(this.scene, grid);
         mover.trackPawns(pawn);
 
         if (IS_DEVELOPMENT) {
