@@ -21,9 +21,11 @@ import {
 import { TextBlock } from "@babylonjs/gui";
 import { GridMaterial } from "@babylonjs/materials/grid/gridMaterial";
 
-// Augments the scene with the debug methods
-import "@babylonjs/core/Debug/debugLayer";
-import "@babylonjs/inspector";
+async function loadDebugModuleIfNeeded() {
+    // Augments the scene with the debug methods
+    await import("@babylonjs/core/Debug/debugLayer");
+    await import("@babylonjs/inspector");
+}
 
 import { addLabelToMesh } from "./gui";
 import { IPickableMesh, PickableMeshBehaviour } from "./behaviours";
@@ -243,7 +245,10 @@ class BabylonApp {
         mover.trackPawns(pawn);
 
         if (IS_DEVELOPMENT) {
-            this.scene.debugLayer.show();
+            (async () => {
+                await loadDebugModuleIfNeeded();
+                this.scene.debugLayer.show();
+            })();
         }
     };
 
