@@ -245,18 +245,16 @@ class BabylonApp {
         mover.trackPawns(pawn);
 
         if (IS_DEVELOPMENT) {
-            (async () => {
-                await loadDebugModuleIfNeeded();
-                this.scene.debugLayer.show();
-            })();
+            await loadDebugModuleIfNeeded();
+            this.scene.debugLayer.show();
         }
     };
 
-    run = (): void => {
+    run = async (): Promise<void> => {
         window.addEventListener("resize", this.onResize);
 
         if (this.scene.isReady()) {
-            this.onIsReady();
+            await this.onIsReady();
         }
 
         this.engine.runRenderLoop(() => {
@@ -265,4 +263,6 @@ class BabylonApp {
     };
 }
 
-const app = new BabylonApp("renderCanvas").run();
+const app = new BabylonApp("renderCanvas");
+
+(async () => app.run())();
