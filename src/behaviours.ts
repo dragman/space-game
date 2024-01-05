@@ -1,8 +1,8 @@
 import { Scene } from "@babylonjs/core/scene";
-import { Behavior, Mesh, PointerEventTypes, PointerInfo } from "@babylonjs/core";
+import { AbstractMesh, Behavior, Mesh, PointerEventTypes, PointerInfo } from "@babylonjs/core";
 
 export interface IPickableMesh {
-    mesh: Mesh;
+    mesh: AbstractMesh;
     onPicked(pointerInfo: PointerInfo): void;
     onUnpicked(pointerInfo: PointerInfo): void;
 }

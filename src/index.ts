@@ -1,11 +1,13 @@
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
-import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import {
+    AbstractMesh,
     Animation,
+    AssetContainer,
     BackEase,
     Color3,
     Color4,
@@ -15,11 +17,13 @@ import {
     MeshBuilder,
     Observable,
     PointerInfo,
+    SceneLoader,
     StandardMaterial,
     int,
 } from "@babylonjs/core";
 import { TextBlock } from "@babylonjs/gui";
 import { GridMaterial } from "@babylonjs/materials/grid/gridMaterial";
+import "@babylonjs/loaders/glTF";
 
 async function loadDebugModuleIfNeeded() {
     // Augments the scene with the debug methods
@@ -29,6 +33,8 @@ async function loadDebugModuleIfNeeded() {
 
 import { addLabelToMesh } from "./gui";
 import { IPickableMesh, PickableMeshBehaviour } from "./behaviours";
+
+let assetContainer: AssetContainer;
 
 enum GameState {
     Plan,
@@ -88,38 +94,85 @@ class Mover {
                 { frame: 1 * frameRate, value: targetPosition, easingFunction: easingFunction },
             ];
             moveAnimation.setKeys(moveAnimationKeys);
-            const anim = this.scene.beginDirectAnimation(
+
+            const forward = selectedPawn.mesh.position.subtract(targetPosition).normalize();
+            let up = Vector3.Up();
+            const right = Vector3.Cross(up, forward);
+            up = Vector3.Cross(forward, right);
+            const targetQuaternion = Quaternion.RotationQuaternionFromAxis(right, up, forward);
+
+            const rotateAnimation = new Animation(
+                "rotatePawn",
+                "rotationQuaternion",
+                frameRate,
+                Animation.ANIMATIONTYPE_QUATERNION
+            );
+
+            const rotateAnimationKeys: IAnimationKey[] = [
+                { frame: 0, value: selectedPawn.mesh.rotationQuaternion, easingFunction: easingFunction },
+                { frame: 1 * frameRate, value: targetQuaternion, easingFunction: easingFunction },
+            ];
+            rotateAnimation.setKeys(rotateAnimationKeys);
+
+            this.scene.beginDirectAnimation(
                 selectedPawn.mesh,
-                [moveAnimation],
+                [rotateAnimation],
                 0,
                 1 * frameRate,
                 undefined,
                 undefined,
-                (): void => {}
+                (): void => {
+                    this.scene.beginDirectAnimation(selectedPawn.mesh, [moveAnimation], 0, 1 * frameRate);
+                }
             );
         });
     };
 }
 
 class Pawn implements IPickableMesh {
-    public mesh: Mesh;
+    public mesh: AbstractMesh;
     public selected: boolean;
     public onSelectionObservable: Observable<Pawn>;
 
     constructor(name: string, scene: Scene) {
-        this.mesh = MeshBuilder.CreateCapsule(name, { height: 2, radius: 0.5 }, scene);
+        // this.mesh = MeshBuilder.CreateCapsule(name, { height: 2, radius: 0.5 }, scene);
+        let rootMesh = assetContainer.meshes.find((mesh) => mesh.name === "__root__");
+        const childMeshes = rootMesh.getChildMeshes(true);
+        const boundingMesh = childMeshes.find((x) => x.name == "BoundingBox");
+        const canopyMesh = childMeshes.find((x) => x.name == "Canopy");
+        childMeshes.forEach((child_mesh) => {
+            if (child_mesh !== boundingMesh) {
+                child_mesh.setParent(boundingMesh);
+                child_mesh.isPickable = false;
+            }
+        });
+        rootMesh.dispose(true);
+        rootMesh = boundingMesh;
+        rootMesh.visibility = 0.0001;
+        rootMesh.isPickable = true;
+        rootMesh.name = `${name}_root`;
+        this.mesh = rootMesh;
+
+        this.mesh.scaling = new Vector3(0.25, 0.25, 0.25);
         this.mesh.position = new Vector3(0, 2 / 2, 0);
         this.mesh.edgesWidth = 2.0;
-        this.mesh.edgesColor = Color4.FromColor3(Color3.Black());
+        this.mesh.edgesColor = Color4.FromColor3(Color3.Green());
 
         const material = new StandardMaterial(`${name}_material`, scene);
         material.diffuseColor = Color3.White();
         this.mesh.material = material;
 
+        const canopyMaterial = new StandardMaterial(`${name}_canpoy_material`, scene);
+        canopyMaterial.diffuseColor = new Color3(0.5, 0.2, 0.5);
+        canopyMaterial.specularColor = new Color3(0.8, 0.2, 0.9);
+        canopyMaterial.useReflectionFresnelFromSpecular = true;
+        canopyMesh.material = canopyMaterial;
+
         const pickableBehaviour = new PickableMeshBehaviour(`${name}_pickable_behaviour`, scene);
         pickableBehaviour.attach(this);
 
         this.onSelectionObservable = new Observable();
+        assetContainer.addAllToScene();
     }
 
     onPicked = (pointerInfo: PointerInfo): void => {
@@ -230,6 +283,7 @@ class BabylonApp {
     };
 
     onIsReady = async (): Promise<void> => {
+        this.scene.clearColor = Color4.FromColor3(new Color3(0.05, 0.05, 0.1));
         const camera = new ArcRotateCamera("camera1", -Math.PI / 4, Math.PI / 3, 20, Vector3.Zero(), this.scene);
         camera.setTarget(Vector3.Zero());
         camera.attachControl(this.canvas, true);
@@ -238,6 +292,9 @@ class BabylonApp {
         light.intensity = 0.9;
 
         const grid = new Grid("grid1", this.scene, 12, 4);
+
+        assetContainer = await SceneLoader.LoadAssetContainerAsync("./models/", "ship1.glb", this.scene);
+
         const pawn = new Pawn("pawn1", this.scene);
 
         const stateMachine = new GameStateMachine(GameState.Plan);
