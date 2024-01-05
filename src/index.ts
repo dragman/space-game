@@ -34,6 +34,11 @@ async function loadDebugModuleIfNeeded() {
 import { addLabelToMesh } from "./gui";
 import { IPickableMesh, PickableMeshBehaviour } from "./behaviours";
 
+let baseUrl = "";
+if (!IS_DEVELOPMENT) {
+    baseUrl = "public/";
+}
+
 let assetContainer: AssetContainer;
 
 enum GameState {
@@ -293,7 +298,7 @@ class BabylonApp {
 
         const grid = new Grid("grid1", this.scene, 12, 4);
 
-        assetContainer = await SceneLoader.LoadAssetContainerAsync("./models/", "ship1.glb", this.scene);
+        assetContainer = await SceneLoader.LoadAssetContainerAsync(`${baseUrl}models/`, "ship1.glb", this.scene);
 
         const pawn = new Pawn("pawn1", this.scene);
 
