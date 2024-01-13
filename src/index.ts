@@ -14,7 +14,6 @@ import {
     EasingFunction,
     IAnimationKey,
     Mesh,
-    MeshBuilder,
     Observable,
     PointerInfo,
     SceneLoader,
@@ -51,6 +50,61 @@ interface GameStateTransition {
     toState: GameState;
 }
 
+interface Command {
+    execute(): Promise<void>;
+}
+
+class MovePawnCommand implements Command {
+    constructor(private scene: Scene, private pawn: Pawn, private gridPosition: GridPosition) {}
+
+    async execute(): Promise<void> {
+        const targetPosition = new Vector3(
+            this.gridPosition.normalisedWorldPosition.x,
+            this.pawn.mesh.position.y,
+            this.gridPosition.normalisedWorldPosition.z
+        );
+
+        // Put a simple cheeky animation in.
+        const frameRate = 60;
+        const easingFunction = new BackEase(0.5);
+        easingFunction.setEasingMode(EasingFunction.EASINGMODE_EASEINOUT);
+        const moveAnimation = new Animation("movePawn", "position", frameRate, Animation.ANIMATIONTYPE_VECTOR3);
+        const moveAnimationKeys: IAnimationKey[] = [
+            { frame: 0, value: this.pawn.mesh.position, easingFunction: easingFunction },
+            { frame: 1 * frameRate, value: targetPosition, easingFunction: easingFunction },
+        ];
+        moveAnimation.setKeys(moveAnimationKeys);
+
+        const forward = this.pawn.mesh.position.subtract(targetPosition).normalize();
+        let up = Vector3.Up();
+        const right = Vector3.Cross(up, forward);
+        up = Vector3.Cross(forward, right);
+        const targetQuaternion = Quaternion.RotationQuaternionFromAxis(right, up, forward);
+
+        const rotateAnimation = new Animation(
+            "rotatePawn",
+            "rotationQuaternion",
+            frameRate,
+            Animation.ANIMATIONTYPE_QUATERNION
+        );
+
+        const rotateAnimationKeys: IAnimationKey[] = [
+            { frame: 0, value: this.pawn.mesh.rotationQuaternion, easingFunction: easingFunction },
+            { frame: 1 * frameRate, value: targetQuaternion, easingFunction: easingFunction },
+        ];
+        rotateAnimation.setKeys(rotateAnimationKeys);
+
+        await this.waitForAnimation([rotateAnimation], 0, 1 * frameRate);
+        await this.waitForAnimation([moveAnimation], 0, 1 * frameRate);
+    }
+
+    async waitForAnimation(animations: Animation[], from: number, to: number): Promise<void> {
+        return new Promise((resolve) => {
+            this.scene.beginDirectAnimation(this.pawn.mesh, animations, from, to, undefined, undefined, resolve);
+        });
+    }
+}
+
 class GameStateMachine {
     public currentState: GameState;
     public onGameStateTransitionObservable: Observable<GameStateTransition>;
@@ -64,13 +118,14 @@ class GameStateMachine {
         if (targetState === this.currentState) {
             throw new Error(`We're already in ${GameState[this.currentState]} state!`);
         }
+
         this.onGameStateTransitionObservable.notifyObservers({ fromState: this.currentState, toState: targetState });
     };
 }
 
 class Mover {
     private trackedPawns: Pawn[];
-    constructor(public scene: Scene, public grid: Grid) {
+    constructor(private scene: Scene, private grid: Grid) {
         this.trackedPawns = [];
     }
 
@@ -82,54 +137,9 @@ class Mover {
     };
 
     onPawnSelected = (selectedPawn: Pawn): void => {
-        this.grid.onGridPositionSelectedObservable.addOnce((gridPosition: GridPosition) => {
-            const targetPosition = new Vector3(
-                gridPosition.normalisedWorldPosition.x,
-                selectedPawn.mesh.position.y,
-                gridPosition.normalisedWorldPosition.z
-            );
-
-            // Put a simple cheeky animation in.
-            const frameRate = 60;
-            const easingFunction = new BackEase(0.5);
-            easingFunction.setEasingMode(EasingFunction.EASINGMODE_EASEINOUT);
-            const moveAnimation = new Animation("movePawn", "position", frameRate, Animation.ANIMATIONTYPE_VECTOR3);
-            const moveAnimationKeys: IAnimationKey[] = [
-                { frame: 0, value: selectedPawn.mesh.position, easingFunction: easingFunction },
-                { frame: 1 * frameRate, value: targetPosition, easingFunction: easingFunction },
-            ];
-            moveAnimation.setKeys(moveAnimationKeys);
-
-            const forward = selectedPawn.mesh.position.subtract(targetPosition).normalize();
-            let up = Vector3.Up();
-            const right = Vector3.Cross(up, forward);
-            up = Vector3.Cross(forward, right);
-            const targetQuaternion = Quaternion.RotationQuaternionFromAxis(right, up, forward);
-
-            const rotateAnimation = new Animation(
-                "rotatePawn",
-                "rotationQuaternion",
-                frameRate,
-                Animation.ANIMATIONTYPE_QUATERNION
-            );
-
-            const rotateAnimationKeys: IAnimationKey[] = [
-                { frame: 0, value: selectedPawn.mesh.rotationQuaternion, easingFunction: easingFunction },
-                { frame: 1 * frameRate, value: targetQuaternion, easingFunction: easingFunction },
-            ];
-            rotateAnimation.setKeys(rotateAnimationKeys);
-
-            this.scene.beginDirectAnimation(
-                selectedPawn.mesh,
-                [rotateAnimation],
-                0,
-                1 * frameRate,
-                undefined,
-                undefined,
-                (): void => {
-                    this.scene.beginDirectAnimation(selectedPawn.mesh, [moveAnimation], 0, 1 * frameRate);
-                }
-            );
+        this.grid.onGridPositionSelectedObservable.addOnce(async (gridPosition: GridPosition) => {
+            const moveCommand = new MovePawnCommand(this.scene, selectedPawn, gridPosition);
+            await moveCommand.execute();
         });
     };
 }
