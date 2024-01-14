@@ -20,7 +20,6 @@ import {
     StandardMaterial,
     int,
 } from "@babylonjs/core";
-import { TextBlock } from "@babylonjs/gui";
 import { GridMaterial } from "@babylonjs/materials/grid/gridMaterial";
 import "@babylonjs/loaders/glTF";
 
@@ -30,7 +29,7 @@ async function loadDebugModuleIfNeeded() {
     await import("@babylonjs/inspector");
 }
 
-import { addLabelToMesh } from "./gui";
+import { Gui, log } from "./gui";
 import { IPickableMesh, PickableMeshBehaviour } from "./behaviours";
 
 let baseUrl = "";
@@ -40,22 +39,43 @@ if (!IS_DEVELOPMENT) {
 
 let assetContainer: AssetContainer;
 
-enum GameState {
-    Plan,
-    Resolve,
-}
-
-interface GameStateTransition {
-    fromState: GameState;
-    toState: GameState;
-}
-
 interface Command {
     execute(): Promise<void>;
+    toString(): string;
+}
+
+class Commander {
+    pendingCommands: Command[];
+    constructor() {
+        this.pendingCommands = [];
+    }
+
+    addCommand = (command: Command) => {
+        log(`Adding command ${command.toString()}`);
+        this.pendingCommands.push(command);
+    };
+
+    drainCommands = async () => {
+        const num_commands = this.pendingCommands.length;
+        if (num_commands > 0) {
+            log(`Starting to run ${this.pendingCommands.length} commands`);
+            while (this.pendingCommands.length > 0) {
+                const command = this.pendingCommands.shift();
+                await command.execute();
+            }
+            log(`Finished running commands`);
+        } else {
+            log(`No commands to run`);
+        }
+    };
 }
 
 class MovePawnCommand implements Command {
     constructor(private scene: Scene, private pawn: Pawn, private gridPosition: GridPosition) {}
+
+    toString(): string {
+        return `{MovePawnCommand}`;
+    }
 
     async execute(): Promise<void> {
         const targetPosition = new Vector3(
@@ -105,27 +125,61 @@ class MovePawnCommand implements Command {
     }
 }
 
+enum GameState {
+    Plan,
+    Resolve,
+}
+
+interface GameStateTransition {
+    fromState: GameState;
+    toState: GameState;
+}
+
 class GameStateMachine {
     public currentState: GameState;
-    public onGameStateTransitionObservable: Observable<GameStateTransition>;
 
-    constructor(initialState?: GameState) {
+    private validTransitions: Map<GameState, GameState[]> = new Map([
+        [GameState.Plan, [GameState.Resolve]],
+        [GameState.Resolve, [GameState.Plan]],
+    ]);
+
+    constructor(private commander: Commander, initialState?: GameState) {
         this.currentState = initialState ?? GameState.Plan;
-        this.onGameStateTransitionObservable = new Observable();
+        Gui.getInstance().nextTurnButton.onPointerClickObservable.add(async (...args) => {
+            if (this.currentState === GameState.Plan) {
+                await this.changeState(GameState.Resolve);
+            } else if (this.currentState === GameState.Resolve) {
+                log("Still resolving...");
+            }
+        });
     }
 
-    changeState = (targetState: GameState): void => {
+    canTransition = (targetState: GameState): boolean => {
+        return this.validTransitions.get(this.currentState).includes(targetState);
+    };
+
+    changeState = async (targetState: GameState): Promise<void> => {
         if (targetState === this.currentState) {
             throw new Error(`We're already in ${GameState[this.currentState]} state!`);
         }
 
-        this.onGameStateTransitionObservable.notifyObservers({ fromState: this.currentState, toState: targetState });
+        if (!this.canTransition(targetState)) {
+            throw new Error(
+                `Cannot transition from state ${GameState[this.currentState]} to ${GameState[targetState]}`
+            );
+        }
+
+        this.currentState = GameState.Resolve;
+
+        await this.commander.drainCommands();
+
+        this.currentState = GameState.Plan;
     };
 }
 
 class Mover {
     private trackedPawns: Pawn[];
-    constructor(private scene: Scene, private grid: Grid) {
+    constructor(private scene: Scene, private grid: Grid, private commander: Commander) {
         this.trackedPawns = [];
     }
 
@@ -137,9 +191,10 @@ class Mover {
     };
 
     onPawnSelected = (selectedPawn: Pawn): void => {
+        log(`Selected ${selectedPawn.mesh.name}`);
         this.grid.onGridPositionSelectedObservable.addOnce(async (gridPosition: GridPosition) => {
             const moveCommand = new MovePawnCommand(this.scene, selectedPawn, gridPosition);
-            await moveCommand.execute();
+            this.commander.addCommand(moveCommand);
         });
     };
 }
@@ -219,7 +274,6 @@ class Grid implements IPickableMesh {
     public gridSubdivisions: int;
     public mesh: Mesh;
     public onGridPositionSelectedObservable: Observable<GridPosition>;
-    private label: TextBlock;
 
     constructor(name: string, scene: Scene, size: int, subdivisions: int) {
         this.gridSize = size;
@@ -232,8 +286,6 @@ class Grid implements IPickableMesh {
         material.gridRatio = 3;
         material.gridRatio = this.gridSize / this.gridSubdivisions;
         this.mesh.material = material;
-
-        this.label = addLabelToMesh(this.mesh, "");
 
         const pickableBehaviour = new PickableMeshBehaviour(`${name}_pickable_behaviour`, scene);
         pickableBehaviour.attach(this);
@@ -249,7 +301,6 @@ class Grid implements IPickableMesh {
         const gridPosition = this.getGridPosition(localPoint);
         const normalisedLocalPosition = new Vector3(gridPosition.x, this.mesh.position.y, gridPosition.z);
         const normalisedWorldPosition = Vector3.TransformCoordinates(normalisedLocalPosition, worldMatrix);
-        this.label.text = `(${gridPosition.row}, ${gridPosition.column})`;
         this.onGridPositionSelectedObservable.notifyObservers({
             column: gridPosition.column,
             row: gridPosition.row,
@@ -257,11 +308,10 @@ class Grid implements IPickableMesh {
             normalisedWorldPosition: normalisedWorldPosition,
             localPosition: localPoint,
         });
+        log(`Picked grid: (${gridPosition.row}, ${gridPosition.column})`);
     };
 
-    onUnpicked = (pointerInfo: PointerInfo): void => {
-        this.label.text = "";
-    };
+    onUnpicked = (pointerInfo: PointerInfo): void => {};
 
     getGridPosition = (localPoint: Vector3): { row: int; column: int; x: number; z: number } => {
         const cellHeight = this.gridSize / this.gridSubdivisions;
@@ -306,14 +356,18 @@ class BabylonApp {
         const light = new HemisphericLight("light1", new Vector3(0, 1, 0), this.scene);
         light.intensity = 0.9;
 
+        log("Hello");
+
         const grid = new Grid("grid1", this.scene, 12, 4);
 
         assetContainer = await SceneLoader.LoadAssetContainerAsync(`${baseUrl}models/`, "ship1.glb", this.scene);
 
         const pawn = new Pawn("pawn1", this.scene);
 
-        const stateMachine = new GameStateMachine(GameState.Plan);
-        const mover = new Mover(this.scene, grid);
+        const commander = new Commander();
+
+        const stateMachine = new GameStateMachine(commander, GameState.Plan);
+        const mover = new Mover(this.scene, grid, commander);
         mover.trackPawns(pawn);
 
         if (IS_DEVELOPMENT) {
