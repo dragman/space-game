@@ -13,7 +13,9 @@ import {
     Color4,
     EasingFunction,
     IAnimationKey,
+    LinesMesh,
     Mesh,
+    MeshBuilder,
     Observable,
     PointerInfo,
     SceneLoader,
@@ -71,7 +73,33 @@ class Commander {
 }
 
 class MovePawnCommand implements Command {
-    constructor(private scene: Scene, private pawn: Pawn, private gridPosition: GridPosition) {}
+    mesh: LinesMesh;
+
+    constructor(
+        private scene: Scene,
+        private pawn: Pawn,
+        private gridPosition: GridPosition,
+        private previousGridPosition?: GridPosition
+    ) {
+        const targetPosition = new Vector3(
+            this.gridPosition.normalisedWorldPosition.x,
+            this.pawn.mesh.position.y,
+            this.gridPosition.normalisedWorldPosition.z
+        );
+
+        let startPosition: Vector3;
+        if (this.previousGridPosition) {
+            startPosition = new Vector3(
+                this.previousGridPosition.normalisedWorldPosition.x,
+                this.pawn.mesh.position.y,
+                this.previousGridPosition.normalisedWorldPosition.z
+            );
+        } else {
+            startPosition = this.pawn.mesh.position.clone();
+        }
+        this.mesh = MeshBuilder.CreateLines(`moveLine`, { points: [startPosition, targetPosition] }, this.scene);
+        this.mesh.color = Color3.Green();
+    }
 
     toString(): string {
         return `{MovePawnCommand}`;
@@ -116,6 +144,8 @@ class MovePawnCommand implements Command {
 
         await this.waitForAnimation([rotateAnimation], 0, 1 * frameRate);
         await this.waitForAnimation([moveAnimation], 0, 1 * frameRate);
+
+        this.mesh.dispose();
     }
 
     async waitForAnimation(animations: Animation[], from: number, to: number): Promise<void> {
@@ -130,13 +160,9 @@ enum GameState {
     Resolve,
 }
 
-interface GameStateTransition {
-    fromState: GameState;
-    toState: GameState;
-}
-
 class GameStateMachine {
-    public currentState: GameState;
+    currentState: GameState;
+    onResolveStateObserver: Observable<void>;
 
     private validTransitions: Map<GameState, GameState[]> = new Map([
         [GameState.Plan, [GameState.Resolve]],
@@ -145,6 +171,8 @@ class GameStateMachine {
 
     constructor(private commander: Commander, initialState?: GameState) {
         this.currentState = initialState ?? GameState.Plan;
+        this.onResolveStateObserver = new Observable();
+
         Gui.getInstance().nextTurnButton.onPointerClickObservable.add(async (...args) => {
             if (this.currentState === GameState.Plan) {
                 await this.changeState(GameState.Resolve);
@@ -170,6 +198,7 @@ class GameStateMachine {
         }
 
         this.currentState = GameState.Resolve;
+        this.onResolveStateObserver.notifyObservers();
 
         await this.commander.drainCommands();
 
@@ -179,8 +208,12 @@ class GameStateMachine {
 
 class Mover {
     private trackedPawns: Pawn[];
+    private currentPawn: Pawn;
+    private previousGridPosition: GridPosition;
+
     constructor(private scene: Scene, private grid: Grid, private commander: Commander) {
         this.trackedPawns = [];
+        this.grid.onGridPositionSelectedObservable.add(this.onGridPositionSelected);
     }
 
     trackPawns = (...pawns: Pawn[]): void => {
@@ -192,9 +225,32 @@ class Mover {
 
     onPawnSelected = (selectedPawn: Pawn): void => {
         log(`Selected ${selectedPawn.mesh.name}`);
-        this.grid.onGridPositionSelectedObservable.addOnce(async (gridPosition: GridPosition) => {
-            const moveCommand = new MovePawnCommand(this.scene, selectedPawn, gridPosition);
-            this.commander.addCommand(moveCommand);
+        this.previousGridPosition = null;
+        this.currentPawn = selectedPawn;
+
+        // Deselect any other pawns.
+        for (let otherPawn of this.trackedPawns) {
+            if (otherPawn === selectedPawn) {
+                continue;
+            }
+
+            otherPawn.deselect();
+        }
+    };
+
+    onGridPositionSelected = (gridPosition: GridPosition) => {
+        if (this.trackedPawns.filter((p) => p.selected).length == 0) {
+            log(`No selected pawns`);
+            return;
+        }
+        const moveCommand = new MovePawnCommand(this.scene, this.currentPawn, gridPosition, this.previousGridPosition);
+        this.commander.addCommand(moveCommand);
+        this.previousGridPosition = gridPosition;
+    };
+
+    onResolveState = () => {
+        this.trackedPawns.forEach((pawn) => {
+            pawn.deselect();
         });
     };
 }
@@ -203,6 +259,7 @@ class Pawn implements IPickableMesh {
     public mesh: AbstractMesh;
     public selected: boolean;
     public onSelectionObservable: Observable<Pawn>;
+    public onDeselectionObservable: Observable<Pawn>;
 
     constructor(name: string, scene: Scene) {
         // this.mesh = MeshBuilder.CreateCapsule(name, { height: 2, radius: 0.5 }, scene);
@@ -242,10 +299,11 @@ class Pawn implements IPickableMesh {
         pickableBehaviour.attach(this);
 
         this.onSelectionObservable = new Observable();
+        this.onDeselectionObservable = new Observable();
         assetContainer.addAllToScene();
     }
 
-    onPicked = (pointerInfo: PointerInfo): void => {
+    select = (): void => {
         this.mesh.enableEdgesRendering(0.99);
         if (this.selected !== true) {
             this.selected = true;
@@ -253,12 +311,19 @@ class Pawn implements IPickableMesh {
         }
     };
 
-    onUnpicked = (pointerInfo: PointerInfo): void => {
+    deselect = (): void => {
         this.mesh.disableEdgesRendering();
         if (this.selected === true) {
             this.selected = false;
+            this.onDeselectionObservable.notifyObservers(this);
         }
     };
+
+    onPicked = (pointerInfo: PointerInfo): void => {
+        this.select();
+    };
+
+    onUnpicked = (pointerInfo: PointerInfo): void => {};
 }
 
 interface GridPosition {
@@ -368,6 +433,8 @@ class BabylonApp {
 
         const stateMachine = new GameStateMachine(commander, GameState.Plan);
         const mover = new Mover(this.scene, grid, commander);
+
+        stateMachine.onResolveStateObserver.add(mover.onResolveState);
         mover.trackPawns(pawn);
 
         if (IS_DEVELOPMENT) {
