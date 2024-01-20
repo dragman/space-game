@@ -1,10 +1,13 @@
 import { Scene } from "@babylonjs/core/scene";
-import { AbstractMesh, Behavior, Mesh, PointerEventTypes, PointerInfo } from "@babylonjs/core";
+import { AbstractMesh, Behavior, Matrix, PointerEventTypes, PointerInfo, Vector3 } from "@babylonjs/core";
+import { log } from "./gui";
 
 export interface IPickableMesh {
     mesh: AbstractMesh;
-    onPicked(pointerInfo: PointerInfo): void;
-    onUnpicked(pointerInfo: PointerInfo): void;
+    onPicked(pickedPoint: Vector3): void;
+    onUnpicked(pickedPoint: Vector3): void;
+    onHover(hoveredPoint: Vector3): void;
+    onUnhover(): void;
 }
 
 export class PickableMeshBehaviour implements Behavior<IPickableMesh> {
@@ -31,14 +34,38 @@ export class PickableMeshBehaviour implements Behavior<IPickableMesh> {
     private onPointerPick = (pointerInfo: PointerInfo): void => {
         switch (pointerInfo.type) {
             case PointerEventTypes.POINTERPICK:
-                if (pointerInfo.pickInfo.pickedMesh === this.pickable.mesh) {
-                    this.pickable.onPicked(pointerInfo);
+                const isThisMesh = pointerInfo.pickInfo.pickedMesh === this.pickable.mesh;
+                const pickedPoint = pointerInfo.pickInfo.pickedPoint;
+                if (isThisMesh) {
+                    this.pickable.onPicked(pickedPoint);
                 } else {
-                    this.pickable.onUnpicked(pointerInfo);
+                    this.pickable.onUnpicked(pickedPoint);
                 }
                 break;
+
+            case PointerEventTypes.POINTERMOVE:
+                const hoveredPoint = this.rayHitsMesh();
+                if (hoveredPoint) {
+                    this.pickable.onHover(hoveredPoint);
+                } else {
+                    this.pickable.onUnhover();
+                }
             default:
                 break;
         }
+    };
+
+    private rayHitsMesh = (): Vector3 | null => {
+        const ray = this.scene.createPickingRay(
+            this.scene.pointerX,
+            this.scene.pointerY,
+            Matrix.Identity(),
+            this.scene.activeCamera
+        );
+        const hit = this.scene.pickWithRay(ray);
+        if (hit.pickedMesh === this.pickable.mesh) {
+            return hit.pickedPoint;
+        }
+        return null;
     };
 }

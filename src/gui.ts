@@ -31,10 +31,10 @@ export class Gui {
         const button = Button.CreateSimpleButton("but", "End Turn");
         button.paddingBottomInPixels = 10;
         button.paddingRightInPixels = 10;
-        button.width = "140px";
-        button.height = "100px";
-        button.color = "black";
-        button.background = "white";
+        button.width = "15%";
+        button.height = "15%";
+        button.color = "white";
+        button.background = "black";
         button.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
         button.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
         this.nextTurnButton = button;
