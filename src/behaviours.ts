@@ -1,11 +1,10 @@
 import { Scene } from "@babylonjs/core/scene";
 import { AbstractMesh, Behavior, Matrix, PointerEventTypes, PointerInfo, Vector3 } from "@babylonjs/core";
-import { log } from "./gui";
 
 export interface IPickableMesh {
     mesh: AbstractMesh;
     onPicked(pickedPoint: Vector3): void;
-    onUnpicked(pickedPoint: Vector3): void;
+    onUnpicked(): void;
     onHover(hoveredPoint: Vector3): void;
     onUnhover(): void;
 }
@@ -32,24 +31,26 @@ export class PickableMeshBehaviour implements Behavior<IPickableMesh> {
     }
 
     private onPointerPick = (pointerInfo: PointerInfo): void => {
+        const isThisMesh = pointerInfo.pickInfo.pickedMesh === this.pickable.mesh;
+        const pickedPoint = pointerInfo.pickInfo.pickedPoint;
+        const hoveredPoint = this.rayHitsMesh();
+
         switch (pointerInfo.type) {
             case PointerEventTypes.POINTERPICK:
-                const isThisMesh = pointerInfo.pickInfo.pickedMesh === this.pickable.mesh;
-                const pickedPoint = pointerInfo.pickInfo.pickedPoint;
                 if (isThisMesh) {
                     this.pickable.onPicked(pickedPoint);
                 } else {
-                    this.pickable.onUnpicked(pickedPoint);
+                    this.pickable.onUnpicked();
                 }
                 break;
 
             case PointerEventTypes.POINTERMOVE:
-                const hoveredPoint = this.rayHitsMesh();
                 if (hoveredPoint) {
                     this.pickable.onHover(hoveredPoint);
                 } else {
                     this.pickable.onUnhover();
                 }
+                break;
             default:
                 break;
         }
