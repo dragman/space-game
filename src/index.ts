@@ -3,7 +3,7 @@ import { Engine } from "@babylonjs/core/Engines/engine";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Scene } from "@babylonjs/core/scene";
-import { Color3, Color4, SceneLoader } from "@babylonjs/core";
+import { Color3, Color4 } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF";
 
 async function loadDebugModuleIfNeeded() {
@@ -52,9 +52,7 @@ class BabylonApp {
 
         const grid = new Grid("grid1", this.scene, 12, 4);
 
-        const assetContainer = await SceneLoader.LoadAssetContainerAsync(`${baseUrl}models/`, "ship1.glb", this.scene);
-
-        const pawn = new Pawn("pawn1", this.scene, assetContainer);
+        const pawn = await Pawn.from_file("pawn1", this.scene, `${baseUrl}models/`, "ship1.glb");
 
         const commander = new Commander();
 
