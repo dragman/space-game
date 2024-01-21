@@ -4,25 +4,27 @@ import { Pawn } from "./pawn";
 import { Commander, MovePawnCommand } from "./commands";
 import { GridPosition } from "./grid";
 import { Grid } from "./grid";
+import { Vector3 } from "@babylonjs/core";
 
 export class Mover {
     private trackedPawns: Pawn[];
-    private currentPawn: Pawn;
     private previousGridPosition: GridPosition;
+    private currentPawn: Pawn | null = null;
 
     constructor(private scene: Scene, private grid: Grid, private commander: Commander) {
         this.trackedPawns = [];
         this.grid.onGridPositionSelectedObservable.add(this.onGridPositionSelected);
+        this.grid.onGridPositionHoveredObservable.add(this.onGridPositionHovered);
     }
 
-    trackPawns = (...pawns: Pawn[]): void => {
+    public trackPawns = (...pawns: Pawn[]): void => {
         pawns.forEach((pawn) => {
             pawn.onSelectionObservable.add(this.onPawnSelected);
         });
         this.trackedPawns.push(...pawns);
     };
 
-    onPawnSelected = (selectedPawn: Pawn): void => {
+    private onPawnSelected = (selectedPawn: Pawn): void => {
         log(`Selected ${selectedPawn.mesh.name}`);
         this.previousGridPosition = null;
         this.currentPawn = selectedPawn;
@@ -37,8 +39,8 @@ export class Mover {
         }
     };
 
-    onGridPositionSelected = (gridPosition: GridPosition) => {
-        if (this.trackedPawns.filter((p) => p.selected).length == 0) {
+    private onGridPositionSelected = (gridPosition: GridPosition) => {
+        if (this.currentPawn === null) {
             log(`No selected pawns`);
             return;
         }
@@ -47,7 +49,19 @@ export class Mover {
         this.previousGridPosition = gridPosition;
     };
 
-    onResolveState = () => {
+    private onGridPositionHovered = (gridPosition: GridPosition | null): void => {
+        if (this.currentPawn === null || gridPosition === null) {
+            return;
+        }
+
+        this.currentPawn.ghost.mesh.position = new Vector3(
+            gridPosition.normalisedWorldPosition.x,
+            this.currentPawn.ghost.mesh.position.y,
+            gridPosition.normalisedWorldPosition.z
+        );
+    };
+
+    public onResolveState = () => {
         this.trackedPawns.forEach((pawn) => {
             pawn.deselect();
         });

@@ -11,8 +11,10 @@ export class Grid implements IPickableMesh {
     public gridSubdivisions: int;
     public mesh: Mesh;
     public onGridPositionSelectedObservable: Observable<GridPosition>;
+    public onGridPositionHoveredObservable: Observable<GridPosition | null>;
 
     private highlightMesh: AbstractMesh;
+    private lastHoverPosition: GridPosition | null = null;
 
     constructor(name: string, scene: Scene, size: int, subdivisions: int) {
         this.gridSize = size;
@@ -30,6 +32,7 @@ export class Grid implements IPickableMesh {
         pickableBehaviour.attach(this);
 
         this.onGridPositionSelectedObservable = new Observable();
+        this.onGridPositionHoveredObservable = new Observable();
 
         this.highlightMesh = this.makeHighlightMesh(scene, subdivisionSize);
     }
@@ -66,10 +69,18 @@ export class Grid implements IPickableMesh {
             gridPosition.normalisedWorldPosition.z
         );
         this.highlightMesh.visibility = 1;
+        if (this.lastHoverPosition !== gridPosition) {
+            this.lastHoverPosition = gridPosition;
+            this.onGridPositionHoveredObservable.notifyObservers(this.lastHoverPosition);
+        }
     }
 
     onUnhover(): void {
         this.highlightMesh.visibility = 0;
+        if (this.lastHoverPosition !== null) {
+            this.lastHoverPosition = null;
+            this.onGridPositionHoveredObservable.notifyObservers(this.lastHoverPosition);
+        }
     }
 
     getGridCoordinates = (localPoint: Vector3): { row: int; column: int; x: number; z: number } => {
