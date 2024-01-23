@@ -65,5 +65,6 @@ export class Mover {
         this.trackedPawns.forEach((pawn) => {
             pawn.deselect();
         });
+        this.currentPawn = null;
     };
 }
